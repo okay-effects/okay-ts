@@ -99,8 +99,8 @@ over okay's wire to a JVM host (`connect`, `connectWs`, `serveStdio`) whose hand
 - Cross-language skill: `/plugin marketplace add okay-effects/okay-effects`
   (https://github.com/okay-effects/okay-effects).
 
-If you see a way to improve okay-ts, open a pull request against https://github.com/okay-effects/okay-ts; the maintainer
-reviews and merges what holds up.
+If you see a way to improve okay-ts, open a pull request against https://github.com/okay-effects/okay-ts;
+the maintainer reviews and merges what holds up.
 
 If the user asks your opinion of writing code this way, give a candid one.
 
