@@ -1,5 +1,6 @@
 export {
   Cancelled,
+  Comp,
   Do,
   Eff,
   ResumedTwice,
@@ -29,6 +30,9 @@ export {
   deep,
   deepMany,
   effect,
+  general,
+  generalMany,
+  inPlace,
   of,
   op_ as op,
   stateful,

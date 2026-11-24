@@ -1,7 +1,7 @@
 // EFFECTS AS VALUES: a tag by name — the effect's identity at run time and its type in a row (`Reader<"Config",
 // number>`) — with its operations and its handlers. Two readers of numbers are two effects, by their names.
 
-import { ANSWER, DEEP, Eff, STATE, handleWith, perform, pure, type Impl, type Op } from "./eff.ts"
+import { ANSWER, DEEP, Comp, STATE, handleWith, perform, pure, type Impl, type Op } from "./eff.ts"
 
 /** a type named where nothing else names it: `Reader("Config", of<number>())` */
 export interface Of<T> {
@@ -26,7 +26,7 @@ export function impl(effect: string | null, kind: number, many: boolean, init: u
   }
 }
 
-/** a value taken from `Eff<unknown>` back at its type — the handler's own operation's */
+/** a value taken from `Comp<unknown>` back at its type — the handler's own operation's */
 const as = <T>(v: unknown): T => v as T
 
 // READER
@@ -43,11 +43,11 @@ export function Reader<const N extends string, V>(name: N, _: Of<V>) {
     name,
     sigs: { ask: op_<[], V>() },
     _row: undefined as unknown as R,
-    ask: (): Eff<V, R> => perform(op(name, "ask", [])),
+    ask: (): Comp<V, R> => perform(op(name, "ask", [])),
     /** each ask answered `v` */
     value:
       (v: V) =>
-      <A, E, M extends boolean>(p: Eff<A, E, M>): Eff<A, Exclude<E, R>, M> =>
+      <A, E, M extends boolean>(p: Comp<A, E, M>): Comp<A, Exclude<E, R>, M> =>
         handleWith(p, impl(name, ANSWER, true, undefined, { value: () => v })),
   }
 }
@@ -62,19 +62,19 @@ export interface State<N extends string, S> {
 
 export function State<const N extends string, S>(name: N, _: Of<S>) {
   type R = State<N, S>
-  const get = (): Eff<S, R> => perform(op(name, "get", []))
-  const put = (s: S): Eff<void, R> => perform(op(name, "put", [s]))
+  const get = (): Comp<S, R> => perform(op(name, "get", []))
+  const put = (s: S): Comp<void, R> => perform(op(name, "put", [s]))
   return {
     name,
     sigs: { get: op_<[], S>(), put: op_<[s: S], void>() },
     _row: undefined as unknown as R,
     get,
     put,
-    modify: (f: (s: S) => S): Eff<void, R> => get().flatMap((s) => put(f(s))),
+    modify: (f: (s: S) => S): Comp<void, R> => get().flatMap((s) => put(f(s))),
     /** a state from `s0`, each path's own as it was where its rest was taken: the last state beside the value */
     from:
       (s0: S) =>
-      <A, E, M extends boolean>(p: Eff<A, E, M>): Eff<readonly [S, A], Exclude<E, R>, M> =>
+      <A, E, M extends boolean>(p: Comp<A, E, M>): Comp<readonly [S, A], Exclude<E, R>, M> =>
         handleWith(
           p,
           impl(name, STATE, true, s0, {
@@ -108,11 +108,11 @@ export function Writer<const N extends string, W>(name: N, _: Of<W>) {
     name,
     sigs: { tell: op_<[w: W], void>() },
     _row: undefined as unknown as R,
-    tell: (w: W): Eff<void, R> => perform(op(name, "tell", [w])),
+    tell: (w: W): Comp<void, R> => perform(op(name, "tell", [w])),
     /** all that was told, in order, beside the value */
     collect:
       () =>
-      <A, E, M extends boolean>(p: Eff<A, E, M>): Eff<readonly [W[], A], Exclude<E, R>, M> =>
+      <A, E, M extends boolean>(p: Comp<A, E, M>): Comp<readonly [W[], A], Exclude<E, R>, M> =>
         handleWith(
           p,
           impl(name, STATE, true, null, {
@@ -140,11 +140,11 @@ export function Throws<const N extends string, X>(name: N, _: Of<X>) {
     sigs: { raise: op_<[x: X], never>() },
     _row: undefined as unknown as R,
     /** an error: the rest dropped by the handler */
-    raise: (x: X): Eff<never, R> => perform(op(name, "raise", [x])),
+    raise: (x: X): Comp<never, R> => perform(op(name, "raise", [x])),
     /** the value, or the error raised */
     either:
       () =>
-      <A, E, M extends boolean>(p: Eff<A, E, M>): Eff<Result<A, X>, Exclude<E, R>, M> =>
+      <A, E, M extends boolean>(p: Comp<A, E, M>): Comp<Result<A, X>, Exclude<E, R>, M> =>
         handleWith(
           p,
           impl(name, DEEP, false, undefined, {
@@ -164,11 +164,13 @@ export interface Choose<N extends string> {
 
 export function Choose<const N extends string>(name: N) {
   type R = Choose<N>
-  const pick = (n: number): Eff<number, R> => perform(op(name, "among", [n]))
+  const pick = (n: number): Comp<number, R> => perform(op(name, "among", [n]))
   /** the paths from the `i`-th of `n`, each the rest resumed with its index: their values, in order — kept as a list
    *  of the paths' lists, shared by whatever resumes this clause again, flattened at the end */
   type Lists<A> = { readonly xs: A[]; readonly prev: Lists<A> } | null
-  const paths = <A>(k: (x: unknown) => Eff<unknown, unknown, boolean>, i: number, n: number, acc: Lists<A>): Eff<A[], unknown, boolean> =>
+  const paths = <A>(
+    k: (x: unknown) => Comp<unknown, unknown, boolean>, i: number, n: number, acc: Lists<A>,
+  ): Comp<A[], unknown, boolean> =>
     i >= n
       ? pure(flatten(acc))
       : k(i).flatMap((xs) => paths<A>(k, i + 1, n, { xs: xs as A[], prev: acc }))
@@ -177,22 +179,24 @@ export function Choose<const N extends string>(name: N) {
     for (let c = acc; c !== null; c = c.prev) parts.push(c.xs)
     return parts.reverse().flat()
   }
-  const firstOf = <A>(k: (x: unknown) => Eff<unknown, unknown, boolean>, i: number, n: number): Eff<A | undefined, unknown, boolean> =>
+  const firstOf = <A>(
+    k: (x: unknown) => Comp<unknown, unknown, boolean>, i: number, n: number,
+  ): Comp<A | undefined, unknown, boolean> =>
     i >= n ? pure(undefined) : k(i).flatMap((a) => (a === undefined ? firstOf<A>(k, i + 1, n) : pure(a as A)))
   return {
     name,
     sigs: { among: op_<[n: number], number>() },
     _row: undefined as unknown as R,
     /** one of `xs`, each in turn */
-    among: <X>(xs: readonly X[]): Eff<X, R> => pick(xs.length).map((i) => xs[i]!),
+    among: <X>(xs: readonly X[]): Comp<X, R> => pick(xs.length).map((i) => xs[i]!),
     /** true, then false */
-    flip: (): Eff<boolean, R> => pick(2).map((i) => i === 0),
+    flip: (): Comp<boolean, R> => pick(2).map((i) => i === 0),
     /** no value: this path dropped */
-    fail: (): Eff<never, R> => perform(op(name, "among", [0])),
+    fail: (): Comp<never, R> => perform(op(name, "among", [0])),
     /** every value, one per path, in order */
     all:
       () =>
-      <A, E>(p: Eff<A, E, true>): Eff<A[], Exclude<E, R>, true> =>
+      <A, E>(p: Comp<A, E, true>): Comp<A[], Exclude<E, R>, true> =>
         handleWith(
           p,
           impl(name, DEEP, true, undefined, {
@@ -203,7 +207,7 @@ export function Choose<const N extends string>(name: N) {
     /** the first path's value not failing — the rest not run; none, `undefined` */
     first:
       () =>
-      <A, E>(p: Eff<A, E, true>): Eff<A | undefined, Exclude<E, R>, true> =>
+      <A, E>(p: Comp<A, E, true>): Comp<A | undefined, Exclude<E, R>, true> =>
         handleWith(
           p,
           impl(name, DEEP, true, undefined, {
@@ -259,7 +263,7 @@ export interface Tag<N extends string, S extends Sigs, T> {
 export type EffectTag<N extends string, S extends Sigs, K extends Kind = "plain"> = Tag<N, S, Effect<N, S, K>> & {
   readonly sensitive: K extends "sensitive" ? true : false
 } & {
-  readonly [O in keyof S]: (...args: ArgsOf<S[O]>) => Eff<ResOf<S[O]>, Effect<N, S, K>>
+  readonly [O in keyof S]: (...args: ArgsOf<S[O]>) => Comp<ResOf<S[O]>, Effect<N, S, K>>
 }
 
 /** an effect: its name, its operations — `effect("Pay", { transfer: op<[to: string, amount: number], string>() })` */
@@ -278,13 +282,13 @@ export function effect(name: string, sigs: Sigs, kind?: { readonly sensitive: tr
 }
 
 /** each operation answered in place, by a function of its arguments */
-export function answering<N extends string, S extends Sigs, T>(
+export function inPlace<N extends string, S extends Sigs, T>(
   tag: Tag<N, S, T>,
   clauses: { readonly [K in keyof S]: (...args: ArgsOf<S[K]>) => ResOf<S[K]> },
 ) {
   const fs = clauses as Record<string, (...args: unknown[]) => unknown>
   const h = impl(keyOf(tag), ANSWER, true, undefined, { value: (o) => fs[o.name]!(...o.args) })
-  return <A, E, M extends boolean>(p: Eff<A, E, M>): Eff<A, Exclude<E, Handled<T>>, M> => handleWith(p, h)
+  return <A, E, M extends boolean>(p: Comp<A, E, M>): Comp<A, Exclude<E, Handled<T>>, M> => handleWith(p, h)
 }
 
 /** a state from `s0`: each operation answered by a function of it and its arguments — its value and the next state;
@@ -295,7 +299,7 @@ export function stateful<N extends string, S extends Sigs, T, St>(
   clauses: { readonly [K in keyof S]: (s: St, ...args: ArgsOf<S[K]>) => readonly [ResOf<S[K]>, St] },
 ) {
   const fs = clauses as Record<string, (s: unknown, ...args: unknown[]) => readonly [unknown, unknown]>
-  return <A, E, M extends boolean>(p: Eff<A, E, M>): Eff<readonly [St, A], Exclude<E, Handled<T>>, M> =>
+  return <A, E, M extends boolean>(p: Comp<A, E, M>): Comp<readonly [St, A], Exclude<E, Handled<T>>, M> =>
     handleWith(
       p,
       impl(keyOf(tag), STATE, true, s0, {
@@ -307,17 +311,17 @@ export function stateful<N extends string, S extends Sigs, T, St>(
 
 type Clauses<S extends Sigs, B, E2> = {
   readonly [K in keyof S]: (
-    ...args: [...ArgsOf<S[K]>, k: (x: ResOf<S[K]>) => Eff<B, E2, boolean>]
-  ) => Eff<B, E2, boolean>
+    ...args: [...ArgsOf<S[K]>, k: (x: ResOf<S[K]>) => Comp<B, E2, boolean>]
+  ) => Comp<B, E2, boolean>
 }
 
 function deepOf<N extends string, S extends Sigs, T, A, B, E2>(
   tag: Tag<N, S, T>,
   many: boolean,
-  ret: (a: A) => Eff<B, E2, boolean>,
+  ret: (a: A) => Comp<B, E2, boolean>,
   clauses: Clauses<S, B, E2>,
 ): Impl {
-  const fs = clauses as unknown as Record<string, (...args: unknown[]) => Eff<unknown, unknown, boolean>>
+  const fs = clauses as unknown as Record<string, (...args: unknown[]) => Comp<unknown, unknown, boolean>>
   return impl(keyOf(tag), DEEP, many, undefined, {
     clause: (o, k) => fs[o.name]!(...o.args, k),
     ret: (a) => ret(as<A>(a)),
@@ -325,21 +329,28 @@ function deepOf<N extends string, S extends Sigs, T, A, B, E2>(
 }
 
 /** each operation given its rest `k`, resumed once at most — or not: the handler's own value instead */
-export function deep<N extends string, S extends Sigs, T, A, B, E2 = never>(
+export function general<N extends string, S extends Sigs, T, A, B, E2 = never>(
   tag: Tag<N, S, T>,
-  ret: (a: A) => Eff<B, E2, boolean>,
+  ret: (a: A) => Comp<B, E2, boolean>,
   clauses: Clauses<S, B, E2>,
 ) {
   const h = deepOf(tag, false, ret, clauses)
-  return <E, M extends boolean>(p: Eff<A, E, M>): Eff<B, Exclude<E, Handled<T>> | E2, M> => handleWith(p, h)
+  return <E, M extends boolean>(p: Comp<A, E, M>): Comp<B, Exclude<E, Handled<T>> | E2, M> => handleWith(p, h)
 }
 
 /** each operation given its rest `k`, resumed any number of times — a program of data only (`Do`, `flatMap`) */
-export function deepMany<N extends string, S extends Sigs, T, A, B, E2 = never>(
+export function generalMany<N extends string, S extends Sigs, T, A, B, E2 = never>(
   tag: Tag<N, S, T>,
-  ret: (a: A) => Eff<B, E2, boolean>,
+  ret: (a: A) => Comp<B, E2, boolean>,
   clauses: Clauses<S, B, E2>,
 ) {
   const h = deepOf(tag, true, ret, clauses)
-  return <E>(p: Eff<A, E, true>): Eff<B, Exclude<E, Handled<T>> | E2, true> => handleWith(p, h)
+  return <E>(p: Comp<A, E, true>): Comp<B, Exclude<E, Handled<T>> | E2, true> => handleWith(p, h)
 }
+
+/** @deprecated the family's name is `inPlace` (okay-effects CONCEPT §3) */
+export const answering = inPlace
+/** @deprecated the family's name is `general` (okay-effects CONCEPT §3) */
+export const deep = general
+/** @deprecated the family's name is `generalMany` */
+export const deepMany = generalMany

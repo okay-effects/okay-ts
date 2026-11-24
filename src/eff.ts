@@ -1,5 +1,5 @@
-// A PROGRAM OF EFFECTS IS DATA: `Eff<A, E, M>` — of value `A`, its effects `E` a union of effect types (its row), `M`
-// whether its rest may be resumed many times (`true`: data all through) or once at most (`boolean`: a generator in
+// A PROGRAM OF EFFECTS IS DATA: `Comp<A, E, M>` — of value `A`, its effects `E` a union of effect types (its row),
+// `M` whether its rest may be resumed many times (`true`: data all through) or once at most (`boolean`: a generator in
 // it). Immutable nodes, run by the machine below; a handler's rest `k` data too.
 
 /** an operation: of its effect (by name — the effect's identity at run time), its name, its arguments */
@@ -20,7 +20,7 @@ const RESUME = 5
 const DEFER = 6
 const MAP = 7
 
-export class Eff<A, E = never, M extends boolean = true> {
+export class Comp<A, E = never, M extends boolean = true> {
   declare readonly _A: () => A
   declare readonly _E: () => E
   declare readonly _M: () => M
@@ -35,12 +35,12 @@ export class Eff<A, E = never, M extends boolean = true> {
   }
 
   /** the rest given this program's value */
-  flatMap<B, E2 = never, M2 extends boolean = true>(f: (a: A) => Eff<B, E2, M2>): Eff<B, E | E2, M | M2> {
-    return new Eff(FLATMAP, this, f)
+  flatMap<B, E2 = never, M2 extends boolean = true>(f: (a: A) => Comp<B, E2, M2>): Comp<B, E | E2, M | M2> {
+    return new Comp(FLATMAP, this, f)
   }
 
-  map<B>(f: (a: A) => B): Eff<B, E, M> {
-    return new Eff(MAP, this, f)
+  map<B>(f: (a: A) => B): Comp<B, E, M> {
+    return new Comp(MAP, this, f)
   }
 
   /** this program given to `h` — a handler: `p.handle(Config.value(5))` */
@@ -48,14 +48,14 @@ export class Eff<A, E = never, M extends boolean = true> {
     return h(this)
   }
 
-  /** its value — every effect handled: an `Eff<A, never>`, else it does not compile */
-  run(this: Eff<A, never, boolean>): A {
+  /** its value — every effect handled: an `Comp<A, never>`, else it does not compile */
+  run(this: Comp<A, never, boolean>): A {
     return run(this)
   }
 
   /** its value when every `Async` operation's promise is done — the rest of its effects handled; cancelled by
    *  `signal`: its generators' `finally` run, the promise rejected with `Cancelled` */
-  runPromise(this: Eff<A, Async, boolean>, opts?: { readonly signal?: AbortSignal }): Promise<A> {
+  runPromise(this: Comp<A, Async, boolean>, opts?: { readonly signal?: AbortSignal }): Promise<A> {
     return runPromise(this, opts)
   }
 
@@ -63,45 +63,50 @@ export class Eff<A, E = never, M extends boolean = true> {
 
   /** `key` bound to the value of `f(scope)` */
   bind<K extends string, B, E2 = never, M2 extends boolean = true>(
-    this: Eff<A & object, E, M>,
+    this: Comp<A & object, E, M>,
     key: Exclude<K, keyof A>,
-    f: (scope: A) => Eff<B, E2, M2>,
-  ): Eff<A & { readonly [k in K]: B }, E | E2, M | M2> {
+    f: (scope: A) => Comp<B, E2, M2>,
+  ): Comp<A & { readonly [k in K]: B }, E | E2, M | M2> {
     return this.flatMap((s) => f(s).map((b) => ({ ...s, [key]: b }) as A & { readonly [k in K]: B }))
   }
 
   /** `key` bound to a value made of the scope */
   let<K extends string, B>(
-    this: Eff<A & object, E, M>,
+    this: Comp<A & object, E, M>,
     key: Exclude<K, keyof A>,
     f: (scope: A) => B,
-  ): Eff<A & { readonly [k in K]: B }, E, M> {
+  ): Comp<A & { readonly [k in K]: B }, E, M> {
     return this.map((s) => ({ ...s, [key]: f(s) }) as A & { readonly [k in K]: B })
   }
 
   /** a program run for its effects, its value dropped, the scope kept */
-  do<E2 = never, M2 extends boolean = true>(f: (scope: A) => Eff<unknown, E2, M2>): Eff<A, E | E2, M | M2> {
+  do<E2 = never, M2 extends boolean = true>(f: (scope: A) => Comp<unknown, E2, M2>): Comp<A, E | E2, M | M2> {
     return this.flatMap((s) => f(s).map(() => s))
   }
 
   /** `yield*` in a generator: this program's value */
-  *[Symbol.iterator](): Generator<Eff<A, E, M>, A, any> {
+  *[Symbol.iterator](): Generator<Comp<A, E, M>, A, any> {
     return yield this
   }
 }
 
-export function pure<A>(a: A): Eff<A> {
-  return new Eff(PURE, a, undefined)
+/** @deprecated the family's name for a program is `Comp` (okay-effects CONCEPT §3) */
+export const Eff = Comp
+/** @deprecated the family's name for a program is `Comp` (okay-effects CONCEPT §3) */
+export type Eff<A, E = never, M extends boolean = true> = Comp<A, E, M>
+
+export function pure<A>(a: A): Comp<A> {
+  return new Comp(PURE, a, undefined)
 }
 
 /** a program made when it is run — a recursion's call, in constant stack */
-export function defer<A, E = never, M extends boolean = true>(f: () => Eff<A, E, M>): Eff<A, E, M> {
-  return new Eff(DEFER, f, undefined)
+export function defer<A, E = never, M extends boolean = true>(f: () => Comp<A, E, M>): Comp<A, E, M> {
+  return new Comp(DEFER, f, undefined)
 }
 
 /** the operation `op`: its value, given by the nearest handler of its effect */
-export function perform<A, E>(op: Op): Eff<A, E> {
-  return new Eff(PERFORM, op, undefined)
+export function perform<A, E>(op: Op): Comp<A, E> {
+  return new Comp(PERFORM, op, undefined)
 }
 
 /** WAITING ON THE WORLD: an operation whose value is a promise's — answered by `runPromise` */
@@ -112,23 +117,23 @@ export interface Async {
 
 /** the promise's value: the program waits for it; its rejection thrown where the operation is — a generator's
  *  `try`/`catch` around the `yield*` catches it */
-export function wait<A>(p: Promise<A> | (() => Promise<A>)): Eff<A, Async> {
+export function wait<A>(p: Promise<A> | (() => Promise<A>)): Comp<A, Async> {
   return perform({ effect: "Async", name: "await", args: [p] })
 }
 
 /** the start of a `Do`: an empty scope */
-export const Do: Eff<{}> = pure({})
+export const Do: Comp<{}> = pure({})
 
 /** the effects of a program: its row */
-export type RowOf<P> = P extends Eff<any, infer E, any> ? E : never
+export type RowOf<P> = P extends Comp<any, infer E, any> ? E : never
 
 /**
  * A PROGRAM WRITTEN AS A GENERATOR: `yield* p` binds a program's value. Its rest is the generator's own state — resumed
  * once at most (`M` is `boolean`): a handler resuming it many times (`all`) asks a program of data (`Do`), and does
  * not take this one
  */
-export function eff<Y extends Eff<any, any, any>, A>(body: () => Generator<Y, A, any>): Eff<A, RowOf<Y>, boolean> {
-  return new Eff(GEN, body, undefined)
+export function eff<Y extends Comp<any, any, any>, A>(body: () => Generator<Y, A, any>): Comp<A, RowOf<Y>, boolean> {
+  return new Comp(GEN, body, undefined)
 }
 
 // HANDLERS, as the machine sees them: a delimiter of the program's stack, for one effect or for all
@@ -145,18 +150,18 @@ export interface Impl {
   readonly many: boolean
   readonly init: unknown
   /** the body's value, the state: the handler's program */
-  ret(a: unknown, s: unknown): Eff<unknown, unknown, boolean>
+  ret(a: unknown, s: unknown): Comp<unknown, unknown, boolean>
   /** ANSWER: the operation's value, in place */
   value?(op: Op, s: unknown): unknown
   /** STATE: the operation's value and the state after it */
   step?(op: Op, s: unknown): readonly [unknown, unknown]
   /** DEEP: the clause, given the rest */
-  clause?(op: Op, k: (x: unknown) => Eff<unknown, unknown, boolean>, s: unknown): Eff<unknown, unknown, boolean>
+  clause?(op: Op, k: (x: unknown) => Comp<unknown, unknown, boolean>, s: unknown): Comp<unknown, unknown, boolean>
 }
 
 /** `p` under the handler `h` */
-export function handleWith<B, E, M extends boolean>(p: Eff<unknown, unknown, boolean>, h: Impl): Eff<B, E, M> {
-  return new Eff(HANDLE, p, h)
+export function handleWith<B, E, M extends boolean>(p: Comp<unknown, unknown, boolean>, h: Impl): Comp<B, E, M> {
+  return new Comp(HANDLE, p, h)
 }
 
 // THE MACHINE: a node and a stack of frames, persistent — a rest is a part of it, kept, re-laid any number of times.
@@ -169,11 +174,11 @@ const F_HAND = 3
 
 /** a generator's state: where it is — a rest of it taken earlier and resumed again finds it moved on */
 class GenState {
-  readonly it: Generator<Eff<unknown, unknown, boolean>, unknown, unknown>
+  readonly it: Generator<Comp<unknown, unknown, boolean>, unknown, unknown>
   at = 0
   /** its `finally` running, the program cancelled: when it is done, the cancellation goes on */
   closing = false
-  constructor(it: Generator<Eff<unknown, unknown, boolean>, unknown, unknown>) {
+  constructor(it: Generator<Comp<unknown, unknown, boolean>, unknown, unknown>) {
     this.it = it
   }
 }
@@ -234,7 +239,7 @@ export class ResumedTwice extends Error {
   }
 }
 
-type Node = Eff<unknown, unknown, boolean>
+type Node = Comp<unknown, unknown, boolean>
 
 // RUNNING: a program started, its steps (okay-kernel's protocol): it comes to a value (`done`), needs an operation
 // no handler of it has in force (`yield`, with its rest `k`: resumed, failed, cancelled — any number of times),
@@ -267,7 +272,7 @@ const FAIL = 2
 const CANCEL = 3
 
 /** a program started: its first step */
-export function start<A>(p: Eff<A, any, boolean>, host?: Answers): Step<A> {
+export function start<A>(p: Comp<A, any, boolean>, host?: Answers): Step<A> {
   return exec<A>(RUN, p, undefined, null, host)
 }
 
@@ -418,7 +423,7 @@ function exec<A>(mode0: number, cur0: Node | null, v0: unknown, stack0: Frame | 
               let resumed = 0
               const k = (x: unknown): Node => {
                 if (++resumed > 1 && !h.many) throw new ResumedTwice("a rest of a handler that resumes once")
-                return new Eff(RESUME, r, x)
+                return new Comp(RESUME, r, x)
               }
               stack = hand.next
               cur = h.clause!(op, k, hand.s)
@@ -454,7 +459,7 @@ function rest<A>(stack: Frame | null, host: Answers | undefined): Resume<A> {
 }
 
 /** a program run to its value, every effect handled */
-export function run<A>(p: Eff<A, never, boolean>): A {
+export function run<A>(p: Comp<A, never, boolean>): A {
   const s = start(p)
   switch (s.tag) {
     case "done":
@@ -476,7 +481,7 @@ export class Cancelled extends Error {
 }
 
 /** a program run to its value, each `Async` operation's promise awaited; cancelled by `signal` */
-export async function runPromise<A>(p: Eff<A, Async, boolean>, opts?: { readonly signal?: AbortSignal }): Promise<A> {
+export async function runPromise<A>(p: Comp<A, Async, boolean>, opts?: { readonly signal?: AbortSignal }): Promise<A> {
   const signal = opts?.signal
   let step = start(p)
   for (;;) {

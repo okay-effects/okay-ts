@@ -4,7 +4,23 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { Choose, Do, Eff, Reader, State, eff, of, type RowOf } from "../src/index.ts"
+import {
+  Choose,
+  Comp,
+  Do,
+  Eff,
+  Reader,
+  State,
+  answering,
+  deep,
+  deepMany,
+  eff,
+  general,
+  generalMany,
+  inPlace,
+  of,
+  type RowOf,
+} from "../src/index.ts"
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false
 const same = <X, Y>(_: Equal<X, Y>) => {}
@@ -36,8 +52,8 @@ test("a handler resuming many times takes a program of data only", () => {
   const gen = eff(function* () {
     return yield* Choice.among([1, 2])
   })
-  same<typeof data, Eff<number, Choose<"Choice">, true>>(true)
-  same<typeof gen, Eff<number, Choose<"Choice">, boolean>>(true)
+  same<typeof data, Comp<number, Choose<"Choice">, true>>(true)
+  same<typeof gen, Comp<number, Choose<"Choice">, boolean>>(true)
   assert.deepEqual(data.handle(Choice.all()).run(), [1, 2])
   // @ts-expect-error — a generator's rest goes on once: `all` does not take it
   gen.handle(Choice.all())
@@ -49,4 +65,12 @@ test("a handler resuming many times takes a program of data only", () => {
 test("a scope's names are bound once", () => {
   // @ts-expect-error — `x` bound already
   Do.bind("x", () => Config.ask()).bind("x", () => Config.ask())
+})
+
+test("the old names are the canonical ones, deprecated", () => {
+  same<Eff<number, never, true>, Comp<number, never, true>>(true)
+  assert.equal(Eff, Comp)
+  assert.equal(answering, inPlace)
+  assert.equal(deep, general)
+  assert.equal(deepMany, generalMany)
 })

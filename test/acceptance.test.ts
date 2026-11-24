@@ -6,11 +6,11 @@ import { test } from "node:test"
 import {
   Choose,
   Do,
-  Eff,
+  Comp,
   ResumedTwice,
   State,
-  answering,
-  deepMany,
+  inPlace,
+  generalMany,
   defer,
   effect,
   eff,
@@ -43,7 +43,7 @@ test("D. state inside the choice: each path its own", () => {
 
 test("D. a cell inside the choice: one for the run", () => {
   let s = 0
-  const cell = answering(S, {
+  const cell = inPlace(S, {
     get: () => s,
     put: (x) => {
       s = x
@@ -58,7 +58,7 @@ test("D. a cell inside the choice: one for the run", () => {
 
 test("A/D. the rests made first, resumed later and in reverse: each its state as it was when captured", () => {
   const Two = effect("Two", { pick: op<[], number>() })
-  const twice = deepMany(Two, (a: number) => pure([a]), {
+  const twice = generalMany(Two, (a: number) => pure([a]), {
     pick: (k) => {
       const one = k(1)
       const two = k(2)
@@ -80,15 +80,15 @@ test("F. flatMap and filter over 100 000 empties, in constant stack", () => {
 })
 
 test("F. binds nested to the left, 100 000, in constant stack", () => {
-  let p: Eff<number> = pure(0)
+  let p: Comp<number> = pure(0)
   for (let i = 0; i < 100_000; i++) p = p.flatMap((x) => pure(x + 1))
   assert.equal(p.run(), 100_000)
 })
 
 test("isEven/isOdd, a million calls, mutual, each a state's operation: constant stack", () => {
-  const even = (n: number): Eff<boolean, State<"S", number>> =>
+  const even = (n: number): Comp<boolean, State<"S", number>> =>
     n === 0 ? pure(true) : S.modify((s) => s + 1).flatMap(() => defer(() => odd(n - 1)))
-  const odd = (n: number): Eff<boolean, State<"S", number>> =>
+  const odd = (n: number): Comp<boolean, State<"S", number>> =>
     n === 0 ? pure(false) : S.modify((s) => s + 1).flatMap(() => defer(() => even(n - 1)))
   assert.deepEqual(even(1_000_000).handle(S.from(0)).run(), [1_000_000, true])
 })
@@ -97,6 +97,6 @@ test("a generator's rest resumed twice — the types refusing it, forced: said s
   const gen = eff(function* () {
     return yield* Choice.among([1, 2])
   })
-  const forced = gen as unknown as Eff<number, Choose<"Choice">, true>
+  const forced = gen as unknown as Comp<number, Choose<"Choice">, true>
   assert.throws(() => forced.handle(Choice.all()).run(), ResumedTwice)
 })

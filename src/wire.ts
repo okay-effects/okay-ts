@@ -8,13 +8,13 @@
 import { connect as tcp, type Socket } from "node:net"
 import { createInterface } from "node:readline"
 
-import { Eff, start, type Op, type Resume, type Step } from "./eff.ts"
+import { Comp, start, type Op, type Resume, type Step } from "./eff.ts"
 
 /** the wire's shim version, the one okay's hosts speak */
 export const SHIM = 9
 
 /** the programs a host may start, by name: `fn` is `module:name` or `name` */
-export type Programs = Readonly<Record<string, (...args: any[]) => Eff<unknown, any, boolean>>>
+export type Programs = Readonly<Record<string, (...args: any[]) => Comp<unknown, any, boolean>>>
 
 export interface FarSideOptions {
   /** an operation's name on the wire — a callback's name in the host. By default `Effect.op` (`Pay.transfer`) */
@@ -99,7 +99,7 @@ export class FarSide {
     return { shim: SHIM, python: `okay-ts ${process.version}`, speaks: { format: ["json"], compress: [], frames: [] } }
   }
 
-  private find(fn: string): (...args: any[]) => Eff<unknown, any, boolean> {
+  private find(fn: string): (...args: any[]) => Comp<unknown, any, boolean> {
     const p = this.programs[fn] ?? this.programs[fn.slice(fn.indexOf(":") + 1)]
     if (p === undefined) throw new Error(`no program '${fn}' here (${Object.keys(this.programs).join(", ")})`)
     return p

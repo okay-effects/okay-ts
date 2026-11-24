@@ -2,7 +2,7 @@
 // told, passed on changed, refused; a plain one intercepted for a part of a program; an observer seeing every
 // operation of every effect on its way out, and each answer, as many times as the rest gets it. The trail an effect.
 
-import { DEEP, Eff, handleWith, perform, pure, type Op } from "./eff.ts"
+import { DEEP, Comp, handleWith, perform, pure, type Op } from "./eff.ts"
 import {
   Writer,
   impl,
@@ -16,21 +16,21 @@ import {
 
 /** the operations an interceptor passes on, as `P` — past an audit `Audited<T>`, the only way to them */
 export type Pass<S extends Sigs, P> = {
-  readonly [K in keyof S]: (...args: ArgsOf<S[K]>) => Eff<ResOf<S[K]>, P>
+  readonly [K in keyof S]: (...args: ArgsOf<S[K]>) => Comp<ResOf<S[K]>, P>
 }
 
 /** an interceptor's clauses: each operation's arguments and `pass`, to a program of its value */
 export type Clauses<S extends Sigs, P> = {
-  readonly [K in keyof S]: (...args: [...ArgsOf<S[K]>, pass: Pass<S, P>]) => Eff<ResOf<S[K]>, any, boolean>
+  readonly [K in keyof S]: (...args: [...ArgsOf<S[K]>, pass: Pass<S, P>]) => Comp<ResOf<S[K]>, any, boolean>
 }
 
-type RowOfClauses<C> = { [K in keyof C]: C[K] extends (...a: any[]) => Eff<any, infer E, any> ? E : never }[keyof C]
-type ShotsOfClauses<C> = { [K in keyof C]: C[K] extends (...a: any[]) => Eff<any, any, infer M> ? M : never }[keyof C]
+type RowOfClauses<C> = { [K in keyof C]: C[K] extends (...a: any[]) => Comp<any, infer E, any> ? E : never }[keyof C]
+type ShotsOfClauses<C> = { [K in keyof C]: C[K] extends (...a: any[]) => Comp<any, any, infer M> ? M : never }[keyof C]
 
 function interceptor(name: string, sigs: Sigs, passKey: string, clauses: unknown) {
-  const pass: Record<string, (...args: unknown[]) => Eff<unknown, unknown>> = {}
+  const pass: Record<string, (...args: unknown[]) => Comp<unknown, unknown>> = {}
   for (const k of Object.keys(sigs)) pass[k] = (...args) => perform({ effect: passKey, name: k, args })
-  const fs = clauses as Record<string, (...args: unknown[]) => Eff<unknown, unknown, boolean>>
+  const fs = clauses as Record<string, (...args: unknown[]) => Comp<unknown, unknown, boolean>>
   return impl(name, DEEP, true, undefined, {
     clause: (o, k) => fs[o.name]!(...o.args, pass).flatMap(k),
   })
@@ -47,8 +47,8 @@ export function audit<N extends string, S extends Sigs, T, C extends Clauses<S, 
 ) {
   const h = interceptor(tag.name, tag.sigs, `audited:${tag.name}`, clauses)
   return <A, E, M extends boolean>(
-    p: Eff<A, E, M>,
-  ): Eff<A, Exclude<E, T> | RowOfClauses<C>, M | ShotsOfClauses<C>> => handleWith(p, h)
+    p: Comp<A, E, M>,
+  ): Comp<A, Exclude<E, T> | RowOfClauses<C>, M | ShotsOfClauses<C>> => handleWith(p, h)
 }
 
 /**
@@ -60,7 +60,7 @@ export function intercept<N extends string, S extends Sigs, T, C extends Clauses
   clauses: C,
 ) {
   const h = interceptor(tag.name, tag.sigs, tag.name, clauses)
-  return <A, E, M extends boolean>(p: Eff<A, E, M>): Eff<A, E | RowOfClauses<C>, M | ShotsOfClauses<C>> =>
+  return <A, E, M extends boolean>(p: Comp<A, E, M>): Comp<A, E | RowOfClauses<C>, M | ShotsOfClauses<C>> =>
     handleWith(p, h)
 }
 
@@ -92,9 +92,9 @@ export type AuditedAll<E> = E extends { readonly sensitivity: "sensitive" } ? Au
 
 export interface Watch<E2, M2 extends boolean> {
   /** before the operation goes on — refusing it: an error raised here */
-  readonly before?: (op: Seen) => Eff<unknown, E2, M2>
+  readonly before?: (op: Seen) => Comp<unknown, E2, M2>
   /** its answer, each time the rest gets it */
-  readonly after?: (op: Seen, answer: unknown) => Eff<unknown, E2, M2>
+  readonly after?: (op: Seen, answer: unknown) => Comp<unknown, E2, M2>
 }
 
 /**
@@ -103,9 +103,9 @@ export interface Watch<E2, M2 extends boolean> {
  * passed on as audited: the observer is their audit
  */
 export function observe<E2 = never, M2 extends boolean = true>(watch: Watch<E2, M2>) {
-  const none = (): Eff<unknown, unknown, boolean> => pure(undefined)
-  const before: (op: Seen) => Eff<unknown, unknown, boolean> = watch.before ?? none
-  const after: (op: Seen, answer: unknown) => Eff<unknown, unknown, boolean> = watch.after ?? none
+  const none = (): Comp<unknown, unknown, boolean> => pure(undefined)
+  const before: (op: Seen) => Comp<unknown, unknown, boolean> = watch.before ?? none
+  const after: (op: Seen, answer: unknown) => Comp<unknown, unknown, boolean> = watch.after ?? none
   const h = impl(null, DEEP, true, undefined, {
     clause: (o, k) => {
       const s = seen(o)
@@ -116,7 +116,7 @@ export function observe<E2 = never, M2 extends boolean = true>(watch: Watch<E2, 
         .flatMap(k)
     },
   })
-  return <A, E, M extends boolean>(p: Eff<A, E, M>): Eff<A, AuditedAll<E> | E2, M | M2> => handleWith(p, h)
+  return <A, E, M extends boolean>(p: Comp<A, E, M>): Comp<A, AuditedAll<E> | E2, M | M2> => handleWith(p, h)
 }
 
 // THE TRAIL: an effect — what interceptors and observers write, handled outside them

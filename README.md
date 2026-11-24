@@ -16,7 +16,7 @@ const program = eff(function* () {
   const s = yield* Counter.get()
   return s * 2
 })
-// program: Eff<number, Reader<"Config", number> | State<"Counter", number>, boolean>
+// program: Comp<number, Reader<"Config", number> | State<"Counter", number>, boolean>
 
 program.handle(Config.value(5)).handle(Counter.from(1)).run() // [6, 12]
 ```
@@ -35,21 +35,24 @@ const Pay = effect("Pay", {
   balance: op<[], number>(),
 }, { sensitive: true })
 
-yield* Pay.transfer("acct", 100) // Eff<string, Effect<"Pay", …, "sensitive">>
+yield* Pay.transfer("acct", 100) // Comp<string, Effect<"Pay", …, "sensitive">>
 ```
 
-Handlers, three forms as okay-core's: `answering` (each operation answered in place), `stateful` (a state, each path's
-own as it was where its rest was taken), `deep` / `deepMany` (each operation given its rest `k`). For the standard
+Handlers, three forms as okay-core's: `inPlace` (each operation answered in place), `stateful` (a state, each path's
+own as it was where its rest was taken), `general` / `generalMany` (each operation given its rest `k`). For the standard
 effects ready ones: `Config.value(v)`, `Counter.from(s0)`, `Log.collect()`, `Err.either()`, `Choice.all()`,
 `Choice.first()`. A handler is a function of a program to a program: `p.handle(h)`.
+
+The names are the okay-effects family's (its CONCEPT §3): `Comp` a program, `inPlace` and `general` the two shapes
+of handler. The earlier `Eff`, `answering`, `deep`, `deepMany` are still exported, deprecated.
 
 ## Two ways to write a program: a generator, and data
 
 **A generator** (`eff(function* () { … yield* p … })`) is the idiom of TypeScript, and the program's rest is the
-generator's own state: resumed ONCE at most. Its type says so: `Eff<A, E, boolean>`.
+generator's own state: resumed ONCE at most. Its type says so: `Comp<A, E, boolean>`.
 
 **Data** — `pure`, `flatMap`, `map`, and `Do`, a for over programs whose scope is immutable — can be resumed any number
-of times: `Eff<A, E, true>`.
+of times: `Comp<A, E, true>`.
 
 ```ts
 const paths = Do.bind("b", () => Choice.flip())
@@ -60,16 +63,16 @@ const paths = Do.bind("b", () => Choice.flip())
   .handle(Choice.all())
 ```
 
-A handler that resumes `k` many times (`all`, `first`, `deepMany`) takes a program of data only: a generator given to
+A handler that resumes `k` many times (`all`, `first`, `generalMany`) takes a program of data only: a generator given to
 it is a type error (and, forced by a cast, an error at run time — `ResumedTwice`, saying to write that part as
 data). No replay: a generator stays what it is. The two mix: a generator `yield*`s a program of data with its choice
 handled inside it.
 
 ## Control and audit: interceptors
 
-- An effect declared `{ sensitive: true }` is handled ONLY under its audit: any handler made for it (`answering`,
-  `stateful`, `deep`) takes `Audited<Pay>`, never `Pay` — a program performing `Pay` with no audit keeps `Pay` in its
-  row: no `run`.
+- An effect declared `{ sensitive: true }` is handled ONLY under its audit: any handler made for it (`inPlace`,
+  `stateful`, `general`) takes `Audited<Pay>`, never `Pay` — a program performing `Pay` with no audit keeps `Pay` in
+  its row: no `run`.
 - `audit(Pay, clauses)`: each operation through a clause — its arguments and `pass`, the only way to perform
   `Audited<Pay>` — whose program is the operation's value: passed on as it is or changed, recorded, refused (an error
   raised). Its own operations (the trail, the error) go outside it.
@@ -183,8 +186,8 @@ forgotten run, over TCP.
 
 A node and a persistent stack of frames: a handler is a delimiter on it, a rest `k` the frames down to its handler —
 kept, laid again any number of times, each time with the handlers' states as they were when it was taken. Constant
-stack: a million mutual calls, 100 000 binds nested to the left. An operation answered in place (`answering`) walks to
-its handler and back, nothing captured; a state (`stateful`) re-lays the frames above it; a deep one captures lazily.
+stack: a million mutual calls, 100 000 binds nested to the left. An operation answered in place (`inPlace`) walks to
+its handler and back, nothing captured; a state (`stateful`) re-lays the frames above it; a general one captures lazily.
 
 ## Speed
 
@@ -195,7 +198,7 @@ okay-core's kernel lanes (`node bench/kernel.ts`), the same programs and n as ok
 |---|---|---|---|
 | `pure` — isEven/isOdd, 1000 binds | 3.08 | 8.50 | 11.7 |
 | `answered` — an operation answered in place, each step | 5.58 | 10.81 | 27.0 |
-| `general` — a `deep` handler, `k` each step | 9.44 | 36.87 | 59.2 |
+| `general` — a `general` handler, `k` each step | 9.44 | 36.87 | 59.2 |
 | `reads` | 3.15 | 10.14 | 19.9 |
 | `stateCell` / `state` | 9.34 / 12.47 | 35.48 / 42.63 | 53.1 / 63.8 |
 | `throwing` — each raise under its own either | 20.23 | 88.39 | 59.5 |

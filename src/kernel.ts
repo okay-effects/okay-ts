@@ -4,7 +4,7 @@
 // `Resume` and `Answers` are the protocol's own. The effects meet by NAME: here an effect is named by its tag
 // (`Config`), there by its type (`Reader[Integer]`) — `names` binds the two.
 
-import { Cancelled, Eff, defer, perform, pure, start, type Answers, type Op, type Step } from "./eff.ts"
+import { Cancelled, Comp, defer, perform, pure, start, type Answers, type Op, type Step } from "./eff.ts"
 
 /** a program of any implementation, handed out */
 export interface Computation<A> {
@@ -41,7 +41,7 @@ function stepOut<A>(s: Step<A>, names: Names): Step<A> {
 
 /** EXPORT: a program of here as a computation — its operations no handler here has in force handed out, named as the
  *  kernel names them; a program of data, so that its rest is resumed any number of times there */
-export function toKernel<A>(p: Eff<A, any, boolean>, names: Names = {}): Computation<A> {
+export function toKernel<A>(p: Comp<A, any, boolean>, names: Names = {}): Computation<A> {
   return {
     start: (host) => {
       const here: Answers | undefined =
@@ -59,9 +59,9 @@ export function toKernel<A>(p: Eff<A, any, boolean>, names: Names = {}): Computa
 
 /** IMPORT: a computation of another implementation as a program of here — each operation it hands out performed
  *  here, by the handlers in force, under the name here; its rest resumed as many times as a handler here resumes */
-export function fromKernel<A, E>(c: Computation<A>, names: Names = {}): Eff<A, E> {
+export function fromKernel<A, E>(c: Computation<A>, names: Names = {}): Comp<A, E> {
   const back = inverse(names)
-  const drive = (s: Step<A>): Eff<A, E> => {
+  const drive = (s: Step<A>): Comp<A, E> => {
     switch (s.tag) {
       case "done":
         return pure(s.value)

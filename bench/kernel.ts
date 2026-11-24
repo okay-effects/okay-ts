@@ -5,13 +5,13 @@
 import {
   Choose,
   Do,
-  Eff,
+  Comp,
   Reader,
   State,
   Throws,
   Writer,
-  answering,
-  deep,
+  inPlace,
+  general,
   defer,
   eff,
   effect,
@@ -26,50 +26,53 @@ const Tick = effect("Tick", { value: op<[i: number], number>() })
 const skips = Array.from({ length: 16 }, (_, i) => effect(`Skip${i}`, { value: op<[i: number], number>() }))
 
 // pure: isEven / isOdd over binds
-const isEvenP = (i: number): Eff<boolean> => (i === 0 ? pure(true) : pure(undefined).flatMap(() => isOddP(i - 1)))
-const isOddP = (i: number): Eff<boolean> => (i === 0 ? pure(false) : pure(undefined).flatMap(() => isEvenP(i - 1)))
+const isEvenP = (i: number): Comp<boolean> => (i === 0 ? pure(true) : pure(undefined).flatMap(() => isOddP(i - 1)))
+const isOddP = (i: number): Comp<boolean> => (i === 0 ? pure(false) : pure(undefined).flatMap(() => isEvenP(i - 1)))
 
 // the ticking lanes
-type T = ReturnType<typeof Tick.value> extends Eff<any, infer E> ? E : never
-const isEven = (i: number): Eff<boolean, T> => (i === 0 ? pure(true) : Tick.value(i).flatMap(() => isOdd(i - 1)))
-const isOdd = (i: number): Eff<boolean, T> => (i === 0 ? pure(false) : Tick.value(i).flatMap(() => isEven(i - 1)))
-const ticking = answering(Tick, { value: (i) => i })
-const tickingK = deep(Tick, (a: boolean) => pure(a), { value: (i, k) => k(i) })
-const skipping = skips.map((s) => answering(s, { value: (i) => i }))
-const under16 = (p: Eff<boolean, any>): Eff<boolean, any> => skipping.reduce((q, h) => q.handle(h as any) as any, p)
+type T = ReturnType<typeof Tick.value> extends Comp<any, infer E> ? E : never
+const isEven = (i: number): Comp<boolean, T> => (i === 0 ? pure(true) : Tick.value(i).flatMap(() => isOdd(i - 1)))
+const isOdd = (i: number): Comp<boolean, T> => (i === 0 ? pure(false) : Tick.value(i).flatMap(() => isEven(i - 1)))
+const ticking = inPlace(Tick, { value: (i) => i })
+const tickingK = general(Tick, (a: boolean) => pure(a), { value: (i, k) => k(i) })
+const skipping = skips.map((s) => inPlace(s, { value: (i) => i }))
+const under16 = (p: Comp<boolean, any>): Comp<boolean, any> => skipping.reduce((q, h) => q.handle(h as any) as any, p)
 
 const answered = () => isEven(N).handle(ticking).run()
-const general = () => isEven(N).handle(tickingK).run()
-const forwarded = () => (isEven(N).handle(skipping[0] as any) as Eff<boolean, T>).handle(ticking).run()
-const forwardedK = () => (isEven(N).handle(skipping[0] as any) as Eff<boolean, T>).handle(tickingK).run()
-const forwarded16 = () => (under16(isEven(N)) as Eff<boolean, T>).handle(ticking).run()
-const forwardedK16 = () => (under16(isEven(N)) as Eff<boolean, T>).handle(tickingK).run()
+const generalLane = () => isEven(N).handle(tickingK).run()
+const forwarded = () => (isEven(N).handle(skipping[0] as any) as Comp<boolean, T>).handle(ticking).run()
+const forwardedK = () => (isEven(N).handle(skipping[0] as any) as Comp<boolean, T>).handle(tickingK).run()
+const forwarded16 = () => (under16(isEven(N)) as Comp<boolean, T>).handle(ticking).run()
+const forwardedK16 = () => (under16(isEven(N)) as Comp<boolean, T>).handle(tickingK).run()
 
 // reads
 const Ask = Reader("Ask", of<number>())
-const asks = (i: number, acc: number): Eff<number, ReturnType<typeof Ask.ask> extends Eff<any, infer E> ? E : never> =>
+const asks = (
+  i: number,
+  acc: number,
+): Comp<number, ReturnType<typeof Ask.ask> extends Comp<any, infer E> ? E : never> =>
   i === 0 ? pure(acc) : Ask.ask().flatMap((v) => asks(i - 1, acc + v))
 const reads = () => asks(N, 0).handle(Ask.value(1)).run()
 
 // writer: the log in the handler, answered in place
 const Tell = effect("Tell", { put: op<[i: number], void>() })
-type W = ReturnType<typeof Tell.put> extends Eff<any, infer E> ? E : never
-const telling = (i: number): Eff<void, W> => (i === 0 ? pure(undefined) : Tell.put(i).flatMap(() => telling(i - 1)))
+type W = ReturnType<typeof Tell.put> extends Comp<any, infer E> ? E : never
+const telling = (i: number): Comp<void, W> => (i === 0 ? pure(undefined) : Tell.put(i).flatMap(() => telling(i - 1)))
 const writer = () => {
   const log: number[] = []
-  telling(N).handle(answering(Tell, { put: (i) => void log.push(i) })).run()
+  telling(N).handle(inPlace(Tell, { put: (i) => void log.push(i) })).run()
   return log.length
 }
 
 // state: in a cell, and a handler's state (each path of a k its own)
 const St = State("St", of<number>())
-type S = ReturnType<typeof St.get> extends Eff<any, infer E> ? E : never
-const counting = (i: number): Eff<number, S> =>
+type S = ReturnType<typeof St.get> extends Comp<any, infer E> ? E : never
+const counting = (i: number): Comp<number, S> =>
   i === 0 ? St.get() : St.get().flatMap((x) => St.put(x + 1)).flatMap(() => counting(i - 1))
 const stateCell = () => {
   let s = 0
   return counting(N)
-    .handle(answering(St, { get: () => s, put: (x) => void (s = x) }))
+    .handle(inPlace(St, { get: () => s, put: (x) => void (s = x) }))
     .run()
 }
 const state = () => counting(N).handle(St.from(0)).run()[0]
@@ -79,18 +82,18 @@ const stateDeep = () => counting(N).handle(St.from(0)).handle(Rd.value(0)).handl
 
 // maps
 const leftMaps = () => {
-  let p: Eff<number> = pure(0)
+  let p: Comp<number> = pure(0)
   for (let i = 0; i < N; i++) p = p.map((x) => x + 1)
   return p.run()
 }
 const rightMaps = () => {
-  const go = (i: number): Eff<number> => (i === 0 ? pure(0) : defer(() => go(i - 1)).map((x) => x + 1))
+  const go = (i: number): Comp<number> => (i === 0 ? pure(0) : defer(() => go(i - 1)).map((x) => x + 1))
   return go(N).run()
 }
 
 // throwing: each raise under its own either
 const Err = Throws("Err", of<string>())
-const raising = (i: number, acc: number): Eff<number> =>
+const raising = (i: number, acc: number): Comp<number> =>
   i === 0
     ? pure(acc)
     : Err.raise("no")
@@ -124,7 +127,7 @@ const G_state = () =>
     .handle(St.from(0))
     .run()[1]
 const D_state = () => {
-  let p: Eff<number, S> = St.get()
+  let p: Comp<number, S> = St.get()
   for (let i = 0; i < N; i++) p = Do.bind("x", () => St.get()).do(({ x }) => St.put(x + 1)).flatMap(() => St.get())
   return p.handle(St.from(0)).run()[1]
 }
@@ -132,7 +135,7 @@ const D_state = () => {
 const lanes: [string, () => unknown][] = [
   ["pure", () => isEvenP(N).run()],
   ["answered", answered],
-  ["general", general],
+  ["general", generalLane],
   ["forwarded", forwarded],
   ["forwarded16", forwarded16],
   ["forwardedK", forwardedK],

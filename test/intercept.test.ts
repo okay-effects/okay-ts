@@ -12,7 +12,7 @@ import {
   State,
   Throws,
   Writer,
-  answering,
+  inPlace,
   audit,
   eff,
   effect,
@@ -98,10 +98,10 @@ test("what does not compile: a sensitive effect with no audit, a plain intercept
   // @ts-expect-error — nor a plain one audited
   const notSensitive = () => audit(Log, { tell: (w, pass) => pass.tell(w) })
   // and a bank answering in place is the same: `Audited<Pay>` only
-  const inPlace = answering(Pay, { transfer: (to, n) => `ok:${to}:${n}`, balance: () => 0 })
+  const fixedBank = inPlace(Pay, { transfer: (to, n) => `ok:${to}:${n}`, balance: () => 0 })
   const unauditedInPlace = () =>
     // @ts-expect-error
-    payments.handle(inPlace).run()
+    payments.handle(fixedBank).run()
   void [unaudited, plain, notSensitive, unauditedInPlace]
   assert.throws(() => (payments.handle(bank(1000)) as any).run(), /no handler of Pay/)
 })
